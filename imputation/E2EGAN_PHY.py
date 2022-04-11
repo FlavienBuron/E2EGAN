@@ -21,14 +21,14 @@ tf.set_random_seed(SEED)
 尝试改成N次生成器，一次判别器
 """
 class E2EGAN(object):
-    model_name = "E2EGAN_PHY"     # name for checkpoint
+    model_name = "E2EGAN_CHLO"     # name for checkpoint
 
     def __init__(self, sess, args, datasets):
         self.sess = sess
         self.isbatch_normal=args.isBatch_normal
         self.isNormal=args.isNormal
         self.checkpoint_dir = args.checkpoint_dir
-        self.result_dir = args.result_dir
+        self.result_dir = "out/"
         self.log_dir = args.log_dir
         self.dataset_name=args.dataset_name
         self.run_type=args.run_type
@@ -36,7 +36,7 @@ class E2EGAN(object):
         self.epoch = args.epoch     
         self.batch_size = args.batch_size
         self.n_inputs = args.n_inputs                 # MNIST data input (img shape: 28*28)
-        self.n_steps = datasets.maxLength                                # time steps
+        self.n_steps = datasets.maxLength               # time steps
         self.n_hidden_units = args.n_hidden_units        # neurons in hidden layer
         self.run_type=args.run_type
         self.result_path=args.result_path
@@ -64,15 +64,19 @@ class E2EGAN(object):
         elif "1.4" in tf.__version__:
             self.grui_cell_g1 = mygru_cell.MyGRUCell4(self.n_hidden_units)
             self.grui_cell_g2 = mygru_cell.MyGRUCell4(self.n_hidden_units)
-            self.grui_cell_d = mygru_cell.MyGRUCell14(self.n_hidden_units)
+            self.grui_cell_d = mygru_cell.MyGRUCell4(self.n_hidden_units)
+            # self.grui_cell_d = mygru_cell.MyGRUCell14(self.n_hidden_units)
         elif "1.2" in tf.__version__:
             self.grui_cell_d = mygru_cell.MyGRUCell2(self.n_hidden_units)
             self.grui_cell_g1 = mygru_cell.MyGRUCell2(self.n_hidden_units)
-            self.grui_cell_g2 = mygru_cell.MyGRUCell12(self.n_hidden_units)
+            self.grui_cell_g2 = mygru_cell.MyGRUCell2(self.n_hidden_units)
+            # self.grui_cell_g2 = mygru_cell.MyGRUCell12(self.n_hidden_units)
         # test
         self.sample_num = 64  # number of generated images to be saved
 
         self.num_batches = len(datasets.x) // self.batch_size
+        self.shape = args.shape
+        self.output = args.output
 
       
     def pretrainG(self, x, m, ita, deltaPre, X_lengths, Keep_prob, is_training=True, reuse=False):
@@ -334,7 +338,6 @@ class E2EGAN(object):
         return x_new 
             
     def build_model(self):
-        
         self.keep_prob = tf.placeholder(tf.float32) 
         self.x = tf.placeholder(tf.float32, [None, self.n_steps, self.n_inputs])
         self.m = tf.placeholder(tf.float32, [None, self.n_steps, self.n_inputs])
@@ -350,10 +353,8 @@ class E2EGAN(object):
         #self.z = tf.placeholder(tf.float32, [self.batch_size, self.z_dim], name='z')
         self.ita = tf.placeholder(tf.float32, [None, self.n_steps, self.n_inputs]) 
         
-        
 
         """ Loss Function """
-
         Pre_x = self.pretrainG(self.x, self.m, self.ita, self.deltaPre, self.x_lengths, self.keep_prob, is_training=True, reuse=False)
         self.pretrain_loss = tf.reduce_sum(tf.square(tf.multiply(Pre_x, self.m)-self.x)) / tf.cast(tf.reduce_sum(self.m),tf.float32)
         
@@ -380,7 +381,6 @@ class E2EGAN(object):
         #d_loss = d_loss_real + d_loss_fake 
         d_loss = d_loss_real - g_loss 
 
-
         self.imputed_x = tf.multiply(self.x, self.m) + tf.multiply(g_x, (1-self.m))
         self.l2_loss = l2_loss
         self.d_loss_fake = d_loss_fake 
@@ -389,6 +389,7 @@ class E2EGAN(object):
         self.g_loss = g_loss 
 
         """ Training """
+        
         # divide trainable variables into a group for D and a group for G
         t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if 'd_' in var.name]
@@ -399,7 +400,6 @@ class E2EGAN(object):
         #print("g vars:")
         #for v in g_vars:
         #    print(v.name)
-        
         
         # optimizers
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
@@ -442,7 +442,6 @@ class E2EGAN(object):
                 idx=0
                 #x,y,mean,m,deltaPre,x_lengths,lastvalues,files,imputed_deltapre,imputed_m,deltaSub,subvalues,imputed_deltasub
                 for data_x,data_y,data_mean,data_m,data_deltaPre,data_x_lengths,data_lastvalues,_,imputed_deltapre,imputed_m,deltaSub,subvalues,imputed_deltasub in self.datasets.nextBatch():
-                    
                     data_x = self.reduce_dimension(data_x,3)
                     data_mean = self.reduce_dimension(data_mean,1)
                     data_m = self.reduce_dimension(data_m,3)
@@ -453,9 +452,9 @@ class E2EGAN(object):
                     deltaSub = self.reduce_dimension(deltaSub,3)
                     subvalues = self.reduce_dimension(subvalues,3)
                     imputed_deltasub = self.reduce_dimension(imputed_deltasub,3)
-
                     np.random.seed(SEED)
                     ita = np.random.normal(0, 0.01, size=(self.batch_size, self.n_steps, self.n_inputs))
+
                     _, summary_str,preloss = self.sess.run([self.g_pre_optim, self.g_pretrain_sum, self.pretrain_loss], 
                                                 feed_dict={
                                                           self.x: data_x,
@@ -471,9 +470,10 @@ class E2EGAN(object):
                                                           self.imputed_deltapre:imputed_deltapre,
                                                           self.imputed_deltasub:imputed_deltasub,
                                                           self.keep_prob: 0.5})
+
                     self.writer.add_summary(summary_str, counter)
-                    print("Epoch: [%2d] [%4d/%4d] time: %4.4f, pre_loss: %.8f ,counter:%4d" \
-                      % (epoch, idx, self.num_batches, time.time() - start_time, preloss, counter))
+                    print("\rEpoch: [%2d] [%4d/%4d] time: %4.4f, pre_loss: %.8f ,counter:%4d" \
+                      % (epoch, idx, self.num_batches, time.time() - start_time, preloss, counter)),
                     idx += 1
                     counter += 1
 
@@ -487,23 +487,23 @@ class E2EGAN(object):
         self.writer = tf.summary.FileWriter(self.log_dir + '/' + self.model_name+'/'+self.model_dir)
 
         # restore check-point if it exits
-        could_load, checkpoint_counter = self.load(self.checkpoint_dir)
-        if could_load:
-            start_epoch = (int)(checkpoint_counter / self.num_batches)
-            #start_batch_id = checkpoint_counter - start_epoch * self.num_batches
-            start_batch_id=0
-            #counter = checkpoint_counter
-            counter=start_epoch*self.num_batches
-            print(" [*] Load SUCCESS")
-            self.run_grui()    
-            return True 
-        else:
+        # could_load, checkpoint_counter = self.load(self.checkpoint_dir)
+        could_load, checkpoint_counter = None, None
+        # if could_load:
+        #     start_epoch = (int)(checkpoint_counter / self.num_batches)
+        #     #start_batch_id = checkpoint_counter - start_epoch * self.num_batches
+        #     start_batch_id=0
+        #     #counter = checkpoint_counter
+        #     counter=start_epoch*self.num_batches
+        #     print(" [*] Load SUCCESS")
+        #     self.run_grui()    
+        #     return True 
+        # else:
             # initialize all variables
-            tf.global_variables_initializer().run()
-            start_epoch = 0
-            start_batch_id = 0
-            counter = 1
-            print(" [!] Load failed...")
+        tf.global_variables_initializer().run()
+        start_epoch = 0
+        start_batch_id = 0
+        counter = 1
 
         # loop for epoch
         start_time = time.time()
@@ -569,15 +569,15 @@ class E2EGAN(object):
                                                           self.imputed_deltasub:imputed_deltasub,
                                                           self.keep_prob: 0.5})
                     self.writer.add_summary(summary_str, counter)
-                    print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f,counter:%4d" \
-                      % (epoch, idx, self.num_batches, time.time() - start_time, d_loss, g_loss,counter))
+                    print("\rEpoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f,counter:%4d" \
+                      % (epoch, idx, self.num_batches, time.time() - start_time, d_loss, g_loss,counter)),
                     #debug 
 
                 counter += 1
 
                 # display training status
-                print("Epoch: [%2d] [%4d/%4d] time: %4.4f, g_loss: %.8f, counter:%4d" \
-                      % (epoch, idx, self.num_batches, time.time() - start_time, g_loss, counter))
+                print("\rEpoch: [%2d] [%4d/%4d] time: %4.4f, g_loss: %.8f, counter:%4d" \
+                      % (epoch, idx, self.num_batches, time.time() - start_time, g_loss, counter)),
 
                 # save training results for every 300 steps
                 if np.mod(counter, 300) == 0 :
@@ -605,10 +605,14 @@ class E2EGAN(object):
             start_batch_id = 0
 
         
-        self.save(self.checkpoint_dir, counter)
+        # self.save(self.checkpoint_dir, counter)
         return False
 
     def imputation(self, dataset, runtype ):
+        self.output_mat = []
+        self.tmp = []
+        self.row = 0
+        self.col = 0
         self.datasets = dataset 
         start_time = time.time()
         if runtype == 1:
@@ -648,14 +652,31 @@ class E2EGAN(object):
                                                       self.imputed_deltapre:imputed_deltapre,
                                                       self.imputed_deltasub:imputed_deltasub,
                                                       self.keep_prob: 1})
-            print("Batchid: [%2d]  time: %4.4f, l2_loss: %.8f, p_fake: %.8f, gloss: %.8f"  % ( batch_id, time.time() - start_time, l2loss, p_fake, gloss))
+            print("\rBatchid: [%2d]  time: %4.4f, l2_loss: %.8f, p_fake: %.8f, gloss: %.8f"  % ( batch_id, time.time() - start_time, l2loss, p_fake, gloss)),
             self.save_imputation(gx, batch_id, data_x_lengths, imputed_deltapre, data_y, runtype)
             batch_id = batch_id + 1
+        self.get_output()
+        np.savetxt(self.output, self.output_mat.T.squeeze())
 
         if runtype == 3:
             self.run_grui()
             #pass
         
+    def get_output(self):
+        nb_row, nb_col = self.shape
+        slice_start = 0
+        print(len(self.tmp))
+        while slice_start < len(self.tmp):
+            if slice_start == 0:
+                self.output_mat = np.array(self.tmp[slice_start:nb_col])
+                slice_start += nb_col
+            else:
+                slice = np.array(self.tmp[slice_start:slice_start + nb_col])
+                self.output_mat = np.concatenate((self.output_mat, slice), axis=1)
+                slice_start += nb_col
+
+
+
     def run_grui(self):
         random.seed()
         gpu=1
@@ -676,6 +697,10 @@ class E2EGAN(object):
 
 
     def save_imputation(self,impute_out,batchid,data_x_lengths,imputed_delta,data_y, runtype):
+
+        for imputed_ts in impute_out:
+            self.tmp.append(imputed_ts)
+
         #填充后的数据全是n_steps长度！，但只有data_x_lengths才是可用的
         if runtype == 1:
             imputation_dir="imputation_train_results"

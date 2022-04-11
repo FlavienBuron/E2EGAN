@@ -195,6 +195,7 @@ class ReadPhysionetData():
                     for j in range(len(oneFile[i])):
                         one_lastvalues[i][j]=0.0 if one_m[i][j]==0 else oneFile[i][j]
                     continue
+                
                 for j in range(len(oneFile[i])):
                     if one_m[i-1][j]==1:
                         one_deltaPre[i][j]=one_time[i]-one_time[i-1]
@@ -422,7 +423,7 @@ class ReadPhysionetData():
 
 if __name__ == '__main__':
     
-    dt=ReadPhysionetData("/home/yonghong/ImputationAndPredictionUsingGAN/set-a/train", "/home/yonghong/ImputationAndPredictionUsingGAN/set-a/train/list.txt",isNormal=True,isSlicing=True)
+    dt=ReadPhysionetData("../set-a/train", "../set-a/train/list.txt",isNormal=True,isSlicing=True)
     dt.shuffle(128,False)
     batchCount=1
     X_lengths=dt.x_lengths
